@@ -1,35 +1,41 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 import torch.nn.functional as F
-from model.location_encoder import LocationEncoder
 from model.image_encoder import ImageEncoder
+from model.location_encoder import LocationEncoder
 from model.misc import load_gps_data
-
 from PIL import Image
 from torchvision.transforms import ToPILImage
+
 
 class GeoCLIP(nn.Module):
     def __init__(self, from_pretrained=True):
         super().__init__()
 
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        
+
         self.image_encoder = ImageEncoder()
         self.location_encoder = LocationEncoder()
 
-        self.gps_gallery = load_gps_data("model/gps_gallery/coordinates_100K.csv")
+        self.gps_gallery = load_gps_data("geo-clip/model/gps_gallery/coordinates_100K.csv")
 
         if from_pretrained:
             self.load_weights()
-            
+
     def load_weights(self):
-        self.image_encoder.mlp.load_state_dict(torch.load("model/weights/image_encoder_mlp_weights.pth"))
-        self.location_encoder.load_state_dict(torch.load("model/weights/location_encoder_weights.pth"))
-        self.logit_scale = nn.Parameter(torch.load("model/weights/logit_scale_weights.pth"))
-                                             
+        self.image_encoder.mlp.load_state_dict(
+            torch.load("geo-clip/model/weights/image_encoder_mlp_weights.pth")
+        )
+        self.location_encoder.load_state_dict(
+            torch.load("geo-clip/model/weights/location_encoder_weights.pth")
+        )
+        self.logit_scale = nn.Parameter(
+            torch.load("geo-clip/model/weights/logit_scale_weights.pth")
+        )
+
     def forward(self, image, location):
-        """ Forward pass of GeoCLIP
+        """Forward pass of GeoCLIP
 
         Args:
             image (torch.Tensor): Image tensor of shape (n, 3, 224, 224)
@@ -40,11 +46,11 @@ class GeoCLIP(nn.Module):
         image_features = self.image_encoder(image)
         location_features = self.location_encoder(location)
         logit_scale = self.logit_scale.exp()
-        
+
         # Normalize features
         image_features = F.normalize(image_features, dim=1)
         location_features = F.normalize(location_features, dim=1)
-        
+
         # Cosine similarity (Image Features - Location Feature Queue)
         logits_per_image = logit_scale * (image_features @ location_features.t())
         logits_per_location = logits_per_image.t()
@@ -52,7 +58,7 @@ class GeoCLIP(nn.Module):
         return logits_per_image, logits_per_location
 
     def predict(self, image, top_k):
-        """ Given an image, predict the top k GPS coordinates
+        """Given an image, predict the top k GPS coordinates
 
         Args:
             image (PIL.Image): Input image
